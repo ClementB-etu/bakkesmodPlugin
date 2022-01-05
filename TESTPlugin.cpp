@@ -1,33 +1,62 @@
 // dllmain.cpp : Définit le point d'entrée de l'application DLL.
 #include "Header.h"
+#include "utils/parser.h"
+
 
 
 BAKKESMOD_PLUGIN(TESTPlugin, "TESTPlugin", "0.1", PLUGINTYPE_FREEPLAY)
 
 
 void TESTPlugin::onLoad() {
-	printf("test");
-	cvarManager->registerNotifier("startCounter", [&gw = this->gameWrapper](std::vector<std::string> commands) {
-		//START VERIF FREEPLAY
-		if (!gw->IsInFreeplay())
-			return;
-		ServerWrapper tutorial = gw->GetGameEventAsServer();
 
+	touchMeasure = std::make_shared<bool>(false);
 
-		if (tutorial.GetGameBalls().Count() == 0)
-			return;
-
-		BallWrapper ball = tutorial.GetGameBalls().Get(0);
-		CarWrapper car = tutorial.GetGameCar();
-		if (ball.IsNull() || car.IsNull())
-			return;
-		//END VERIF FREEPLAY
-
-		printf("test");
-
-	}, "Count how many time you hit the ball", PERMISSION_FREEPLAY | PERMISSION_PAUSEMENU_CLOSED);
+	cvarManager->registerCvar("startCounter", "0", "Turns on the count.", true, true, 0.0f, true, 1.0f, false).bindTo(touchMeasure);
+	cvarManager->getCvar("startCounter").addOnValueChanged([this](std::string oldValue, CVarWrapper cvar)
+		{
+			if (cvar.getBoolValue())
+			{
+				gameWrapper->HookEvent("Function TAGame.Car_TA.SetVehicleInput", std::bind(&TESTPlugin::BallHit, this));
+			}
+			else
+			{
+				gameWrapper->UnhookEvent("Function TAGame.Car_TA.SetVehicleInput");
+			}
+		});
 }
 
 void TESTPlugin::onUnload() {
+}
 
+void TESTPlugin::BallHit()
+{	
+	if (*touchMeasure)
+	{	
+		if (!gameWrapper->IsInFreeplay())
+		{
+			return;
+		}
+
+		auto server = gameWrapper->GetGameEventAsServer();
+		if (server.IsNull())
+		{
+			return;
+		}
+		auto ball = server.GetBall();
+		if (ball.IsNull())
+			return;
+		auto rb = ball.GetOldRBState();
+		double new_speed_sq = rb.LinearVelocity.X * rb.LinearVelocity.X + rb.LinearVelocity.Y * rb.LinearVelocity.Y;
+
+		if (old_speed_sq >= 0.0)
+		{
+			if (new_speed_sq > old_speed_sq)
+			{	
+				cpt += 1;
+				//cvarManager->log("HIT : newspeed = " + std::to_string(new_speed_sq) + " oldspeed = "+  std::to_string(old_speed_sq));
+				gameWrapper->LogToChatbox("HIT N° " + std::to_string(cpt),"COMPTEUR");
+			}
+		}
+		old_speed_sq = new_speed_sq;
+	}
 }
